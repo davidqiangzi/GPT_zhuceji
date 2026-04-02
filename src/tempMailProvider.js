@@ -8,9 +8,9 @@ const crypto = require('crypto');
 class TempMailProvider {
     /**
      * @param {string} workerBaseUrl - Worker 后端 API 地址
-     * @param {string} domain - 邮箱域名 (默认 xxx.xxx1)
+     * @param {string} domain - 邮箱域名 (默认 spd100.shop)
      */
-    constructor(workerBaseUrl, domain = 'xxx.xxx1') {
+    constructor(workerBaseUrl, domain = 'spd100.shop') {
         this.baseUrl = workerBaseUrl.replace(/\/$/, '');
         this.domain = domain;
         this.emailAddress = null;

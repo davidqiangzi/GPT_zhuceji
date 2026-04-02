@@ -1,6 +1,7 @@
 const path = require('path');
 const fs = require('fs');
 const { DDGEmailProvider } = require('./src/ddgProvider');
+const { TempMailProvider } = require('./src/tempMailProvider');
 const { BrowserbaseService } = require('./src/browserbaseService');
 const { OAuthService } = require('./src/oauthService');
 const { MailService } = require('./src/mailService');
@@ -266,7 +267,7 @@ async function runSingleRegistration() {
     console.log('[主程序] 开始一次全新的注册与授权流程');
     console.log('=========================================');
     
-    const emailProvider = new DDGEmailProvider();
+    const emailProvider = new TempMailProvider(config.mailApiBaseUrl, 'spd100.shop');
     const browserbase = new BrowserbaseService();
     const oauthService = new OAuthService();
     
@@ -278,11 +279,11 @@ async function runSingleRegistration() {
         console.log(`  - 年龄: ${userData.age}`);
         console.log(`  - 出生日期: ${userData.birthDate}`);
         
-        // 1. 生成 DDG 邮箱别名（每次注册生成唯一的 @duck.com 地址）
+        // 1. 生成独立的临时邮箱
         await emailProvider.generateAlias();
         
-        // 2. 初始化 MailService（DDG 转发到 tmpittie32@mail.spd100.shop，用 JWT 轮询验证码）
-        const mailService = new MailService(config.mailApiBaseUrl, config.mailJwt);
+        // 2. 初始化 MailService（使用为该邮箱生成的专属 JWT 轮询验证码）
+        const mailService = new MailService(config.mailApiBaseUrl, emailProvider.getJwt());
         
         // 3. 创建 Browserbase 会话（只创建一次，两个阶段共享）
         const session = await browserbase.createSession();
@@ -350,11 +351,11 @@ async function startBatch() {
     
     // 检查配置
     if (!config.ddgToken) {
-        console.error('[错误] 未配置 ddgToken，请检查 config.json 文件');
+        console.error('[错误] 未配置 ddgToken，请检查 config.js 文件');
         process.exit(1);
     }
-    if (!config.mailInboxUrl) {
-        console.error('[错误] 未配置 mailInboxUrl，请检查 config.json 文件');
+    if (!config.mailApiBaseUrl) {
+        console.error('[错误] 未配置 mailApiBaseUrl，请检查 config.js 文件');
         process.exit(1);
     }
     

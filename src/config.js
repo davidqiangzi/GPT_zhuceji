@@ -26,11 +26,12 @@ module.exports = {
     ddgToken: "gedahwprf3lzeyvbbvxjcddrfpb42bw9vozs7ztdcnwtqxhni3yoh3cy43iwp9",
     
     // Mail Inbox (前端页面 URL，供 Agent 备用)
-    mailInboxUrl: "https://bfe6955e.temp-mail-telegram-bjv.pages.dev/?jwt=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhZGRyZXNzIjoidG1waXR0aWUzMkB4eHgueHh4MSIsImFkZHJlc3NfaWQiOjN9.BRKTyPuJvLS6DYxsMCZLtgnqaoSY-Mer512B7tSVw9M",
+    mailInboxUrl: "https://bfe6955e.temp-mail-telegram-bjv.pages.dev/?jwt=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhZGRyZXNzIjoidG1wdG1wZGRnQHNwZDEwMC5zaG9wIiwiYWRkcmVzc19pZCI6MTN9.eBQQKDLecX3kM8FhHLRp2rITrBAt268UaGrEZdxR28I",
     
     // Mail API (Worker 后端 API，用于程序化获取验证码)
+    // JWT 对应收件箱: tmptmpddg@spd100.shop (address_id: 13)
     mailApiBaseUrl: "https://temp-mail-worker.dongchongchao888.workers.dev",
-    mailJwt: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhZGRyZXNzIjoidG1waXR0aWUzMkB4eHgueHh4MSIsImFkZHJlc3NfaWQiOjN9.BRKTyPuJvLS6DYxsMCZLtgnqaoSY-Mer512B7tSVw9M",
+    mailJwt: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhZGRyZXNzIjoidG1wdG1wZGRnQHNwZDEwMC5zaG9wIiwiYWRkcmVzc19pZCI6MTN9.eBQQKDLecX3kM8FhHLRp2rITrBAt268UaGrEZdxR28I",
     
     // OAuth
     oauthClientId: config.oauthClientId || 'app_EMoamEEZ73f0CkXaXp7hrann',
