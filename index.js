@@ -1,6 +1,6 @@
 const path = require('path');
 const fs = require('fs');
-const { DDGEmailProvider } = require('./src/ddgProvider');
+const { TempMailProvider } = require('./src/tempMailProvider');
 const { BrowserbaseService } = require('./src/browserbaseService');
 const { OAuthService } = require('./src/oauthService');
 const { MailService } = require('./src/mailService');
@@ -266,10 +266,9 @@ async function runSingleRegistration() {
     console.log('[主程序] 开始一次全新的注册与授权流程');
     console.log('=========================================');
     
-    const emailProvider = new DDGEmailProvider();
+    const emailProvider = new TempMailProvider(config.mailApiBaseUrl, 'xxx.xxx1');
     const browserbase = new BrowserbaseService();
     const oauthService = new OAuthService();
-    const mailService = new MailService(config.mailApiBaseUrl, config.mailJwt);
     
     try {
         // 0. 生成用户数据
@@ -279,17 +278,20 @@ async function runSingleRegistration() {
         console.log(`  - 年龄: ${userData.age}`);
         console.log(`  - 出生日期: ${userData.birthDate}`);
         
-        // 1. 生成邮箱别名
+        // 1. 创建临时邮箱（每次注册一个新地址，验证码会直接进入可 API 读取的收件箱）
         await emailProvider.generateAlias();
         
-        // 2. 创建 Browserbase 会话（只创建一次，两个阶段共享）
+        // 2. 用新创建邮箱的 JWT 初始化 MailService（用于后续 API 轮询验证码）
+        const mailService = new MailService(config.mailApiBaseUrl, emailProvider.getJwt());
+        
+        // 3. 创建 Browserbase 会话（只创建一次，两个阶段共享）
         const session = await browserbase.createSession();
         const wsUrl = session.wsUrl;
         if (!wsUrl) {
             throw new Error('无法从 sessionUrl 中提取 WSS 地址');
         }
         
-        // 3. 第一阶段：ChatGPT 注册（含 API 验证码获取）
+        // 4. 第一阶段：ChatGPT 注册（含 API 验证码获取）
         await phase1(emailProvider, browserbase, wsUrl, userData, mailService);
         
         // 等待 2 秒让浏览器状态稳定

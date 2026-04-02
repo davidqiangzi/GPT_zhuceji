@@ -34,7 +34,8 @@ const lastNames = [
     'Wallace', 'Chapman', 'Oliver', 'Stone', 'Freeman', 'Harper', 'Marshall', 'Spencer', 'Hunt', 'Holland',
 ];
 
-const passwordCharset = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$';
+const passwordLetters = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ';
+const passwordCharset = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
 
 function pickRandom(list) {
     return list[randomInt(list.length)];
@@ -44,13 +45,15 @@ function generateRandomName() {
     return `${pickRandom(firstNames)} ${pickRandom(lastNames)}`;
 }
 
-function generateRandomPassword(length = 16) {
-    let password = '';
+function generateRandomPassword(length = 14) {
+    // 确保密码以字母开头，避免 @ 等特殊字符开头导致输入异常
+    let password = passwordLetters[randomInt(passwordLetters.length)];
 
-    for (let index = 0; index < length; index += 1) {
+    for (let index = 1; index < length; index += 1) {
         password += passwordCharset[randomInt(passwordCharset.length)];
     }
 
+    // 尾部追加固定后缀满足大写+数字+特殊字符要求
     return `${password}A1!`;
 }
 
