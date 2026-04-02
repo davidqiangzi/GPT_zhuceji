@@ -118,9 +118,9 @@ async function phase1(emailProvider, browserbase, userData) {
         targetMatcher: isMissionAccomplishedUrl,
         onUrlChange: (url) => {
             console.log(`[阶段1] URL 变化: ${url}`);
-            // 快速检测失败页面，避免干等 30 分钟
+            // 快速检测失败页面，返回 Error 对象让 CDP 监控终止
             if (isFailureUrl(url)) {
-                throw new Error(`[阶段1] 检测到失败页面，提前终止: ${url}`);
+                return new Error(`[阶段1] 检测到失败页面，提前终止: ${url}`);
             }
         },
         onTargetReached: (url) => {
@@ -185,9 +185,9 @@ async function phase2(emailProvider, browserbase, oauthService, userData) {
         targetMatcher: (url) => isExpectedCallbackUrl(oauthService.redirectUri, url),
         onUrlChange: (url) => {
             console.log(`[阶段2] URL 变化: ${url}`);
-            // 快速检测失败页面
+            // 快速检测失败页面，返回 Error 对象让 CDP 监控终止
             if (isFailureUrl(url)) {
-                throw new Error(`[阶段2] 检测到失败页面，提前终止: ${url}`);
+                return new Error(`[阶段2] 检测到失败页面，提前终止: ${url}`);
             }
         },
         onTargetReached: (url) => {

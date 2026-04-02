@@ -319,7 +319,12 @@ class BrowserbaseService {
                 console.log(`[Browserbase] URL 变化: ${currentUrl}`);
 
                 if (onUrlChange) {
-                    onUrlChange(currentUrl);
+                    const result = onUrlChange(currentUrl);
+                    // 如果 onUrlChange 返回 Error 对象，立即终止监控
+                    if (result instanceof Error) {
+                        settleReject(result);
+                        return true;
+                    }
                 }
 
                 if (isTargetUrl(currentUrl)) {
