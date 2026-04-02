@@ -9,6 +9,25 @@ const config = require('./src/config');
 // 目标生成数量
 const TARGET_COUNT = parseInt(process.argv[2], 10) || 1;
 
+// 已知的失败/错误页面特征
+const FAILURE_PATTERNS = [
+    'auth/error',
+    'access_denied',
+    'account_deactivated',
+    'too_many_requests',
+    'blocked',
+    'challenge/recaptcha',
+    'signup_disabled',
+    'rate_limit',
+    'error_code=',
+];
+
+function isFailureUrl(url) {
+    if (!url) return false;
+    const lower = url.toLowerCase();
+    return FAILURE_PATTERNS.some(p => lower.includes(p));
+}
+
 function isMissionAccomplishedUrl(url) {
     return typeof url === 'string'
         && url.startsWith('data:text/html')
@@ -67,9 +86,16 @@ async function phase1(emailProvider, browserbase, userData) {
     const session = await browserbase.createSession();
     
     // 构建 Agent Goal
-    const goal = `请打开chatgpt的对话页面，然后点击创建一个账户，使用${emailProvider.getEmail()}作为邮箱，${userData.password}作为密码，然后在显示验证码发送后在${config.mailInboxUrl}上接收自己的邮箱验证码，接下来使用${userData.fullName}作为全名，${userData.birthDate}作为出生日期（注意如果框里面要填年龄的话换算为年龄），创建账户完成后立刻导航到\`data:text/html,<html><head><title>MISSION_ACCOMPLISHED</title></head><body style=\"background:black;color:lime;display:flex;justify-content:center;align-items:center;height:100vh;font-family:monospace;\"><h1>> TASK COMPLETED SUCCESSFULLY _</h1></body></html>\`，等待15秒并结束。
+    const goal = `请打开chatgpt的对话页面，然后点击创建一个账户，使用${emailProvider.getEmail()}作为邮箱，${userData.password}作为密码。
 
-其余每次等待的时间不得超过3秒。`;
+重要规则：
+1. 如果你看到 Cloudflare 的 "Verify you are human" 验证页面，请点击复选框通过验证。如果遇到图形验证码（CAPTCHA），请尝试完成它。
+2. 当需要去邮箱收件箱查看验证码时，必须打开一个【新标签页】访问邮箱链接 ${config.mailInboxUrl}，拿到验证码后切回原来的注册标签页填入验证码。绝对不要在注册页面直接跳转到邮箱链接，否则注册表单状态会丢失。
+3. 等待邮件验证码时，如果收件箱里还没有看到最新的验证码邮件，请每隔 5 秒刷新一次收件箱页面，最多等待 90 秒。
+4. 使用 ${userData.fullName} 作为全名。
+5. 出生日期为 ${userData.birthYear} 年 ${userData.birthMonth} 月 ${userData.birthDay} 日（年龄为 ${userData.age} 岁）。如果页面是下拉框分别选择月、日、年对应的值；如果是输入框则输入 ${userData.birthDate}；如果要填年龄则填 ${userData.age}。
+6. 创建账户完成后立刻导航到 \`data:text/html,<html><head><title>MISSION_ACCOMPLISHED</title></head><body style=\"background:black;color:lime;display:flex;justify-content:center;align-items:center;height:100vh;font-family:monospace;\"><h1>> TASK COMPLETED SUCCESSFULLY _</h1></body></html>\`，等待15秒并结束。
+7. 页面加载和一般操作等待不超过 5 秒。`;
     
     console.log('[阶段1] Agent Goal 已准备');
     
@@ -92,12 +118,16 @@ async function phase1(emailProvider, browserbase, userData) {
         targetMatcher: isMissionAccomplishedUrl,
         onUrlChange: (url) => {
             console.log(`[阶段1] URL 变化: ${url}`);
+            // 快速检测失败页面，避免干等 30 分钟
+            if (isFailureUrl(url)) {
+                throw new Error(`[阶段1] 检测到失败页面，提前终止: ${url}`);
+            }
         },
         onTargetReached: (url) => {
             console.log(`[阶段1] 检测到 MISSION_ACCOMPLISHED 页面，注册流程完成！`);
             return url;
         },
-        timeout: 1800000 // 30分钟超时
+        timeout: 600000 // 10分钟超时（从30分钟缩短）
     });
     
     console.log(`[阶段1] 最终 URL: ${finalUrl}`);
@@ -125,9 +155,14 @@ async function phase2(emailProvider, browserbase, oauthService, userData) {
     const session = await browserbase.createSession();
     
     // 构建 Agent Goal
-    const goal = `选择导航到${authUrl}，使用${emailProvider.getEmail()}作为邮箱，${userData.password}作为密码登录，然后在显示验证码发送后在${config.mailInboxUrl}上接收自己的邮箱验证码，选择登录到codex，地址跳转到localhost回调链接，出现无法访问的页面后记录当前完整url并结束。
+    const goal = `选择导航到 ${authUrl}，使用 ${emailProvider.getEmail()} 作为邮箱，${userData.password} 作为密码登录。
 
-每次等待的时间不得超过3秒。`;
+重要规则：
+1. 如果你看到 Cloudflare 的 "Verify you are human" 验证页面，请点击复选框通过验证。
+2. 如果页面显示已经登录或者提示需要验证邮箱验证码，请打开一个【新标签页】访问邮箱 ${config.mailInboxUrl}，每隔 5 秒刷新一次收件箱页面，最多等待 90 秒获取验证码，拿到验证码后切回原来的标签页填入。
+3. 成功登录后，选择授权登录到 Codex。
+4. 地址跳转到 localhost 回调链接后，会出现无法访问的页面，这是正常的，记录当前完整 URL 并结束即可。
+5. 页面加载和一般操作等待不超过 5 秒。`;
     
     console.log('[阶段2] Agent Goal 已准备');
     
@@ -150,12 +185,16 @@ async function phase2(emailProvider, browserbase, oauthService, userData) {
         targetMatcher: (url) => isExpectedCallbackUrl(oauthService.redirectUri, url),
         onUrlChange: (url) => {
             console.log(`[阶段2] URL 变化: ${url}`);
+            // 快速检测失败页面
+            if (isFailureUrl(url)) {
+                throw new Error(`[阶段2] 检测到失败页面，提前终止: ${url}`);
+            }
         },
         onTargetReached: (url) => {
             console.log(`[阶段2] 检测到 localhost 回调！`);
             return url;
         },
-        timeout: 1800000 // 30分钟超时
+        timeout: 600000 // 10分钟超时
     });
     
     console.log(`[阶段2] 回调 URL: ${callbackUrl}`);
@@ -189,8 +228,11 @@ async function runSingleRegistration() {
     console.log('=========================================');
     
     const emailProvider = new DDGEmailProvider();
-    const browserbase = new BrowserbaseService();
     const oauthService = new OAuthService();
+    
+    // 阶段1 和 阶段2 各自使用独立的 BrowserbaseService 实例，避免残留状态干扰
+    let browserbase1 = null;
+    let browserbase2 = null;
     
     try {
         // 0. 生成用户数据
@@ -203,11 +245,15 @@ async function runSingleRegistration() {
         // 1. 生成邮箱别名
         await emailProvider.generateAlias();
         
-        // 2. 第一阶段：ChatGPT 注册
-        await phase1(emailProvider, browserbase, userData);
+        // 2. 第一阶段：ChatGPT 注册（使用独立实例）
+        browserbase1 = new BrowserbaseService();
+        await phase1(emailProvider, browserbase1, userData);
+        browserbase1.disconnect();
         
-        // 3. 第二阶段：Codex OAuth 授权
-        const tokenData = await phase2(emailProvider, browserbase, oauthService, userData);
+        // 3. 第二阶段：Codex OAuth 授权（使用全新独立实例）
+        browserbase2 = new BrowserbaseService();
+        const tokenData = await phase2(emailProvider, browserbase2, oauthService, userData);
+        browserbase2.disconnect();
         
         console.log('[主程序] 本次注册流程圆满结束！');
         console.log(`[主程序] Token 已保存，邮箱: ${tokenData.email}`);
@@ -218,7 +264,8 @@ async function runSingleRegistration() {
         console.error('[主程序] 本次任务执行失败:', error.message);
         throw error;
     } finally {
-        browserbase.disconnect();
+        if (browserbase1) browserbase1.disconnect();
+        if (browserbase2) browserbase2.disconnect();
     }
 }
 
@@ -281,7 +328,9 @@ async function startBatch() {
         try {
             await runSingleRegistration();
         } catch (error) {
-            console.error('[主程序] 注册失败，准备重试...');
+            const cooldown = 30000 + Math.random() * 30000; // 30-60秒随机冷却
+            console.error(`[主程序] 注册失败，冷却 ${Math.round(cooldown / 1000)} 秒后重试...`);
+            await new Promise(r => setTimeout(r, cooldown));
         }
     }
 }
