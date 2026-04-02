@@ -77,16 +77,13 @@ function generateUserData() {
 /**
  * 第一阶段：ChatGPT 注册
  */
-async function phase1(emailProvider, browserbase, userData) {
+async function phase1(emailProvider, browserbase, wsUrl, userData) {
     console.log('\n=========================================');
     console.log('[阶段1] 开始 ChatGPT 注册流程');
     console.log('=========================================');
     
-    // 创建会话
-    const session = await browserbase.createSession();
-    
-    // 构建 Agent Goal
-    const goal = `请打开chatgpt的对话页面，然后点击创建一个账户，使用${emailProvider.getEmail()}作为邮箱，${userData.password}作为密码。
+    // 构建 Agent Goal - 直接导航到注册页面而不是让 Agent 找注册按钮
+    const goal = `请导航到 https://chatgpt.com/#signup 进行账户注册，使用 ${emailProvider.getEmail()} 作为邮箱，${userData.password} 作为密码。
 
 重要规则：
 1. 如果你看到 Cloudflare 的 "Verify you are human" 验证页面，请点击复选框通过验证。如果遇到图形验证码（CAPTCHA），请尝试完成它。
@@ -103,12 +100,6 @@ async function phase1(emailProvider, browserbase, userData) {
     browserbase.sendAgentGoal(goal).catch(e => {
         console.error(`[阶段1] Agent 任务流异常: ${e.message}`);
     });
-    
-    // 连接 CDP 监控 URL 变化
-    const wsUrl = session.wsUrl;
-    if (!wsUrl) {
-        throw new Error('无法从 sessionUrl 中提取 WSS 地址');
-    }
     
     console.log('[阶段1] 开始监控页面 URL 变化，等待到达 MISSION_ACCOMPLISHED 页面...');
     
@@ -127,21 +118,22 @@ async function phase1(emailProvider, browserbase, userData) {
             console.log(`[阶段1] 检测到 MISSION_ACCOMPLISHED 页面，注册流程完成！`);
             return url;
         },
-        timeout: 600000 // 10分钟超时（从30分钟缩短）
+        timeout: 600000 // 10分钟超时
     });
     
     console.log(`[阶段1] 最终 URL: ${finalUrl}`);
-    browserbase.disconnect();
+    // 注意：不在这里 disconnect，保留会话供 Phase2 复用（浏览器保留登录 Cookie）
     
     return true;
 }
 
 /**
  * 第二阶段：Codex OAuth 授权
+ * 复用 Phase1 的会话，浏览器已处于登录状态，无需重新输入密码和验证码
  */
-async function phase2(emailProvider, browserbase, oauthService, userData) {
+async function phase2(emailProvider, browserbase, wsUrl, oauthService, userData) {
     console.log('\n=========================================');
-    console.log('[阶段2] 开始 Codex OAuth 授权流程');
+    console.log('[阶段2] 开始 Codex OAuth 授权流程（复用已登录会话）');
     console.log('=========================================');
     
     // 重新生成 PKCE 参数
@@ -151,31 +143,22 @@ async function phase2(emailProvider, browserbase, oauthService, userData) {
     const authUrl = oauthService.getAuthUrl();
     console.log(`[阶段2] OAuth URL: ${authUrl.substring(0, 100)}...`);
     
-    // 创建新的会话
-    const session = await browserbase.createSession();
-    
-    // 构建 Agent Goal
-    const goal = `选择导航到 ${authUrl}，使用 ${emailProvider.getEmail()} 作为邮箱，${userData.password} 作为密码登录。
+    // 构建 Agent Goal - 由于复用会话，浏览器已登录，Prompt 大幅简化
+    const goal = `导航到以下 OAuth 授权链接: ${authUrl}
 
 重要规则：
 1. 如果你看到 Cloudflare 的 "Verify you are human" 验证页面，请点击复选框通过验证。
-2. 如果页面显示已经登录或者提示需要验证邮箱验证码，请打开一个【新标签页】访问邮箱 ${config.mailInboxUrl}，每隔 5 秒刷新一次收件箱页面，最多等待 90 秒获取验证码，拿到验证码后切回原来的标签页填入。
-3. 成功登录后，选择授权登录到 Codex。
+2. 你应该已经处于登录状态。如果页面直接显示授权确认页面（如 "Allow access" 或类似按钮），直接点击同意授权。
+3. 如果意外需要登录，使用 ${emailProvider.getEmail()} 作为邮箱，${userData.password} 作为密码。如果需要邮箱验证码，打开【新标签页】访问 ${config.mailInboxUrl} 获取，每隔 5 秒刷新，最多等待 90 秒。
 4. 地址跳转到 localhost 回调链接后，会出现无法访问的页面，这是正常的，记录当前完整 URL 并结束即可。
 5. 页面加载和一般操作等待不超过 5 秒。`;
     
     console.log('[阶段2] Agent Goal 已准备');
     
-    // 发送 Agent 任务
+    // 在同一个 session 上发送新的 Agent 任务
     browserbase.sendAgentGoal(goal).catch(e => {
         console.error(`[阶段2] Agent 任务流异常: ${e.message}`);
     });
-    
-    // 连接 CDP 监控 URL 变化
-    const wsUrl = session.wsUrl;
-    if (!wsUrl) {
-        throw new Error('无法从 sessionUrl 中提取 WSS 地址');
-    }
     
     console.log('[阶段2] 开始监控页面 URL 变化，等待 localhost 回调...');
     
@@ -214,8 +197,6 @@ async function phase2(emailProvider, browserbase, oauthService, userData) {
     // 用授权码换取 Token
     const tokenData = await oauthService.exchangeTokenAndSave(params.code, emailProvider.getEmail());
     
-    browserbase.disconnect();
-    
     return tokenData;
 }
 
@@ -228,11 +209,8 @@ async function runSingleRegistration() {
     console.log('=========================================');
     
     const emailProvider = new DDGEmailProvider();
+    const browserbase = new BrowserbaseService();
     const oauthService = new OAuthService();
-    
-    // 阶段1 和 阶段2 各自使用独立的 BrowserbaseService 实例，避免残留状态干扰
-    let browserbase1 = null;
-    let browserbase2 = null;
     
     try {
         // 0. 生成用户数据
@@ -245,15 +223,22 @@ async function runSingleRegistration() {
         // 1. 生成邮箱别名
         await emailProvider.generateAlias();
         
-        // 2. 第一阶段：ChatGPT 注册（使用独立实例）
-        browserbase1 = new BrowserbaseService();
-        await phase1(emailProvider, browserbase1, userData);
-        browserbase1.disconnect();
+        // 2. 创建 Browserbase 会话（只创建一次，两个阶段共享）
+        const session = await browserbase.createSession();
+        const wsUrl = session.wsUrl;
+        if (!wsUrl) {
+            throw new Error('无法从 sessionUrl 中提取 WSS 地址');
+        }
         
-        // 3. 第二阶段：Codex OAuth 授权（使用全新独立实例）
-        browserbase2 = new BrowserbaseService();
-        const tokenData = await phase2(emailProvider, browserbase2, oauthService, userData);
-        browserbase2.disconnect();
+        // 3. 第一阶段：ChatGPT 注册
+        await phase1(emailProvider, browserbase, wsUrl, userData);
+        
+        // 等待 2 秒让浏览器状态稳定
+        console.log('[主程序] 等待 2 秒让浏览器状态稳定...');
+        await new Promise(r => setTimeout(r, 2000));
+        
+        // 4. 第二阶段：Codex OAuth 授权（复用同一会话，浏览器保留登录 Cookie）
+        const tokenData = await phase2(emailProvider, browserbase, wsUrl, oauthService, userData);
         
         console.log('[主程序] 本次注册流程圆满结束！');
         console.log(`[主程序] Token 已保存，邮箱: ${tokenData.email}`);
@@ -264,8 +249,7 @@ async function runSingleRegistration() {
         console.error('[主程序] 本次任务执行失败:', error.message);
         throw error;
     } finally {
-        if (browserbase1) browserbase1.disconnect();
-        if (browserbase2) browserbase2.disconnect();
+        browserbase.disconnect();
     }
 }
 
