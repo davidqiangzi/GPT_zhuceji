@@ -266,7 +266,7 @@ async function runSingleRegistration() {
     console.log('[主程序] 开始一次全新的注册与授权流程');
     console.log('=========================================');
     
-    const emailProvider = new TempMailProvider(config.mailApiBaseUrl, 'xxx.xxx1');
+    const emailProvider = new TempMailProvider(config.mailApiBaseUrl, 'mail.spd100.shop');
     const browserbase = new BrowserbaseService();
     const oauthService = new OAuthService();
     
