@@ -1,6 +1,6 @@
 const path = require('path');
 const fs = require('fs');
-const { TempMailProvider } = require('./src/tempMailProvider');
+const { DDGEmailProvider } = require('./src/ddgProvider');
 const { BrowserbaseService } = require('./src/browserbaseService');
 const { OAuthService } = require('./src/oauthService');
 const { MailService } = require('./src/mailService');
@@ -266,7 +266,7 @@ async function runSingleRegistration() {
     console.log('[主程序] 开始一次全新的注册与授权流程');
     console.log('=========================================');
     
-    const emailProvider = new TempMailProvider(config.mailApiBaseUrl, 'xxx.xxx1');
+    const emailProvider = new DDGEmailProvider();
     const browserbase = new BrowserbaseService();
     const oauthService = new OAuthService();
     
@@ -278,11 +278,11 @@ async function runSingleRegistration() {
         console.log(`  - 年龄: ${userData.age}`);
         console.log(`  - 出生日期: ${userData.birthDate}`);
         
-        // 1. 创建临时邮箱（每次注册一个新地址，验证码会直接进入可 API 读取的收件箱）
+        // 1. 生成 DDG 邮箱别名（@duck.com，可信域名）
         await emailProvider.generateAlias();
         
-        // 2. 用新创建邮箱的 JWT 初始化 MailService（用于后续 API 轮询验证码）
-        const mailService = new MailService(config.mailApiBaseUrl, emailProvider.getJwt());
+        // 2. 初始化 MailService（DDG 转发邮件到临时邮箱，用临时邮箱 JWT 轮询验证码）
+        const mailService = new MailService(config.mailApiBaseUrl, config.mailJwt);
         
         // 3. 创建 Browserbase 会话（只创建一次，两个阶段共享）
         const session = await browserbase.createSession();
