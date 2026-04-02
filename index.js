@@ -3,6 +3,7 @@ const fs = require('fs');
 const { DDGEmailProvider } = require('./src/ddgProvider');
 const { BrowserbaseService } = require('./src/browserbaseService');
 const { OAuthService } = require('./src/oauthService');
+const { MailService } = require('./src/mailService');
 const { generateRandomName, generateRandomPassword } = require('./src/randomIdentity');
 const config = require('./src/config');
 
@@ -75,54 +76,111 @@ function generateUserData() {
 }
 
 /**
- * 第一阶段：ChatGPT 注册
+ * 检测是否到达邮箱验证码页面
  */
-async function phase1(emailProvider, browserbase, wsUrl, userData) {
+function isEmailVerificationUrl(url) {
+    return typeof url === 'string' && url.includes('email-verification');
+}
+
+/**
+ * 第一阶段：ChatGPT 注册
+ * 拆分为两个子阶段：
+ *   1a. Agent 填表直到出现验证码页面
+ *   1b. Node.js 通过 API 获取验证码，Agent 填入验证码并完成注册
+ */
+async function phase1(emailProvider, browserbase, wsUrl, userData, mailService) {
     console.log('\n=========================================');
     console.log('[阶段1] 开始 ChatGPT 注册流程');
     console.log('=========================================');
     
-    // 构建 Agent Goal - 直接导航到注册页面而不是让 Agent 找注册按钮
-    const goal = `请导航到 https://chatgpt.com/#signup 进行账户注册，使用 ${emailProvider.getEmail()} 作为邮箱，${userData.password} 作为密码。
+    // =============================================
+    // 子阶段 1a：Agent 填写注册表单，直到到达邮箱验证页面
+    // =============================================
+    const goal1a = `请导航到 https://chatgpt.com/#signup 进行账户注册，使用 ${emailProvider.getEmail()} 作为邮箱，${userData.password} 作为密码。
 
 重要规则：
 1. 如果你看到 Cloudflare 的 "Verify you are human" 验证页面，请点击复选框通过验证。如果遇到图形验证码（CAPTCHA），请尝试完成它。
-2. 当需要去邮箱收件箱查看验证码时，必须打开一个【新标签页】访问邮箱链接 ${config.mailInboxUrl}，拿到验证码后切回原来的注册标签页填入验证码。绝对不要在注册页面直接跳转到邮箱链接，否则注册表单状态会丢失。
-3. 等待邮件验证码时，如果收件箱里还没有看到最新的验证码邮件，请每隔 5 秒刷新一次收件箱页面，最多等待 90 秒。
-4. 使用 ${userData.fullName} 作为全名。
-5. 出生日期为 ${userData.birthYear} 年 ${userData.birthMonth} 月 ${userData.birthDay} 日（年龄为 ${userData.age} 岁）。如果页面是下拉框分别选择月、日、年对应的值；如果是输入框则输入 ${userData.birthDate}；如果要填年龄则填 ${userData.age}。
-6. 创建账户完成后立刻导航到 \`data:text/html,<html><head><title>MISSION_ACCOMPLISHED</title></head><body style=\"background:black;color:lime;display:flex;justify-content:center;align-items:center;height:100vh;font-family:monospace;\"><h1>> TASK COMPLETED SUCCESSFULLY _</h1></body></html>\`，等待15秒并结束。
-7. 页面加载和一般操作等待不超过 5 秒。`;
+2. 输入邮箱和密码后提交，等待页面跳转到邮箱验证页面（会显示要求输入验证码）。
+3. 到达邮箱验证码输入页面后，请【停下来等待】，不要做任何操作，不要去邮箱页面，验证码会由系统自动提供给你。
+4. 页面加载和一般操作等待不超过 5 秒。`;
     
-    console.log('[阶段1] Agent Goal 已准备');
+    console.log('[阶段1a] 发送填表任务...');
     
-    // 发送 Agent 任务（不等待 EventStream）
-    browserbase.sendAgentGoal(goal).catch(e => {
-        console.error(`[阶段1] Agent 任务流异常: ${e.message}`);
+    const codeReceivedTimestamp = Date.now();
+    
+    browserbase.sendAgentGoal(goal1a).catch(e => {
+        console.error(`[阶段1a] Agent 任务流异常: ${e.message}`);
     });
     
-    console.log('[阶段1] 开始监控页面 URL 变化，等待到达 MISSION_ACCOMPLISHED 页面...');
+    // 监控直到到达 email-verification 页面
+    console.log('[阶段1a] 等待到达邮箱验证页面...');
+    await browserbase.connectToCDP(wsUrl, {
+        targetLabel: '邮箱验证页面',
+        targetMatcher: isEmailVerificationUrl,
+        onUrlChange: (url) => {
+            console.log(`[阶段1a] URL 变化: ${url}`);
+            if (isFailureUrl(url)) {
+                return new Error(`[阶段1a] 检测到失败页面，提前终止: ${url}`);
+            }
+        },
+        onTargetReached: (url) => {
+            console.log(`[阶段1a] ✅ 到达邮箱验证页面！`);
+            return url;
+        },
+        timeout: 300000 // 5分钟超时
+    });
+    
+    // =============================================
+    // 子阶段 1b：Node.js 通过 API 获取验证码
+    // =============================================
+    console.log('[阶段1b] 开始通过 API 轮询验证码...');
+    
+    const verificationCode = await mailService.waitForVerificationCode({
+        pollInterval: 5000,
+        timeout: 90000,
+        fromFilter: 'openai',
+        afterTimestamp: codeReceivedTimestamp
+    });
+    
+    console.log(`[阶段1b] ✅ 验证码已获取: ${verificationCode}`);
+    
+    // =============================================
+    // 子阶段 1c：Agent 填入验证码并完成注册
+    // =============================================
+    const goal1c = `当前页面应该是邮箱验证码输入页面。请在验证码输入框中输入验证码: ${verificationCode}，然后点击提交/继续按钮。
+
+接下来：
+1. 如果需要填写个人信息，使用 ${userData.fullName} 作为全名。
+2. 出生日期为 ${userData.birthYear} 年 ${userData.birthMonth} 月 ${userData.birthDay} 日（年龄为 ${userData.age} 岁）。如果页面是下拉框分别选择月、日、年对应的值；如果是输入框则输入 ${userData.birthDate}；如果要填年龄则填 ${userData.age}。
+3. 如果你看到 Cloudflare 的 "Verify you are human" 验证页面，请点击复选框通过验证。
+4. 创建账户完成后立刻导航到 \`data:text/html,<html><head><title>MISSION_ACCOMPLISHED</title></head><body style=\"background:black;color:lime;display:flex;justify-content:center;align-items:center;height:100vh;font-family:monospace;\"><h1>> TASK COMPLETED SUCCESSFULLY _</h1></body></html>\`，等待15秒并结束。
+5. 页面加载和一般操作等待不超过 5 秒。`;
+    
+    console.log('[阶段1c] 发送验证码填入任务...');
+    
+    browserbase.sendAgentGoal(goal1c).catch(e => {
+        console.error(`[阶段1c] Agent 任务流异常: ${e.message}`);
+    });
     
     // 监控直到到达 MISSION_ACCOMPLISHED 页面
     const finalUrl = await browserbase.connectToCDP(wsUrl, {
         targetLabel: 'MISSION_ACCOMPLISHED 页面',
         targetMatcher: isMissionAccomplishedUrl,
         onUrlChange: (url) => {
-            console.log(`[阶段1] URL 变化: ${url}`);
-            // 快速检测失败页面，返回 Error 对象让 CDP 监控终止
+            console.log(`[阶段1c] URL 变化: ${url}`);
             if (isFailureUrl(url)) {
-                return new Error(`[阶段1] 检测到失败页面，提前终止: ${url}`);
+                return new Error(`[阶段1c] 检测到失败页面，提前终止: ${url}`);
             }
         },
         onTargetReached: (url) => {
-            console.log(`[阶段1] 检测到 MISSION_ACCOMPLISHED 页面，注册流程完成！`);
+            console.log(`[阶段1c] 检测到 MISSION_ACCOMPLISHED 页面，注册流程完成！`);
             return url;
         },
         timeout: 600000 // 10分钟超时
     });
     
     console.log(`[阶段1] 最终 URL: ${finalUrl}`);
-    // 注意：不在这里 disconnect，保留会话供 Phase2 复用（浏览器保留登录 Cookie）
+    // 注意：不在这里 disconnect，保留会话供 Phase2 复用
     
     return true;
 }
@@ -211,6 +269,7 @@ async function runSingleRegistration() {
     const emailProvider = new DDGEmailProvider();
     const browserbase = new BrowserbaseService();
     const oauthService = new OAuthService();
+    const mailService = new MailService(config.mailApiBaseUrl, config.mailJwt);
     
     try {
         // 0. 生成用户数据
@@ -230,8 +289,8 @@ async function runSingleRegistration() {
             throw new Error('无法从 sessionUrl 中提取 WSS 地址');
         }
         
-        // 3. 第一阶段：ChatGPT 注册
-        await phase1(emailProvider, browserbase, wsUrl, userData);
+        // 3. 第一阶段：ChatGPT 注册（含 API 验证码获取）
+        await phase1(emailProvider, browserbase, wsUrl, userData, mailService);
         
         // 等待 2 秒让浏览器状态稳定
         console.log('[主程序] 等待 2 秒让浏览器状态稳定...');
