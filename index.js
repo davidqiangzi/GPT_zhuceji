@@ -97,13 +97,13 @@ async function phase1(emailProvider, browserbase, wsUrl, userData, mailService) 
     // =============================================
     // 子阶段 1a：Agent 填写注册表单，直到到达邮箱验证页面
     // =============================================
-    const goal1a = `请导航到 https://chatgpt.com/#signup 进行账户注册，使用 ${emailProvider.getEmail()} 作为邮箱，${userData.password} 作为密码。
+    const goal1a = `Navigate directly to https://chatgpt.com/#signup to register a new account. Use ${emailProvider.getEmail()} as the email, and ${userData.password} as the password.
 
-重要规则：
-1. 如果你看到 Cloudflare 的 "Verify you are human" 验证页面，请点击复选框通过验证。如果遇到图形验证码（CAPTCHA），请尝试完成它。
-2. 输入邮箱和密码后提交，等待页面跳转到邮箱验证页面（会显示要求输入验证码）。
-3. 到达邮箱验证码输入页面后，请【停下来等待】，不要做任何操作，不要去邮箱页面，验证码会由系统自动提供给你。
-4. 页面加载和一般操作等待不超过 5 秒。`;
+CRITICAL RULES:
+1. If you see a Cloudflare "Verify you are human" checkbox, click it. Complete any CAPTCHAs if they appear.
+2. After submitting the email and password, wait for the page to navigate to the email verification step (where it asks for a code).
+3. ONCE YOU REACH THE EMAIL VERIFICATION PAGE: STOP IMMEDIATELY. Do NOT attempt to check the email yourself. Just wait on the code input screen.
+4. Keep page load and interaction delays under 5 seconds.`;
     
     console.log('[阶段1a] 发送填表任务...');
     
@@ -148,14 +148,14 @@ async function phase1(emailProvider, browserbase, wsUrl, userData, mailService) 
     // =============================================
     // 子阶段 1c：Agent 填入验证码并完成注册
     // =============================================
-    const goal1c = `当前页面应该是邮箱验证码输入页面。请在验证码输入框中输入验证码: ${verificationCode}，然后点击提交/继续按钮。
+    const goal1c = `You should currently be on the email verification code screen. Enter the verification code: ${verificationCode} into the input fields, and then click submit/continue.
 
-接下来：
-1. 如果需要填写个人信息，使用 ${userData.fullName} 作为全名。
-2. 出生日期为 ${userData.birthYear} 年 ${userData.birthMonth} 月 ${userData.birthDay} 日（年龄为 ${userData.age} 岁）。如果页面是下拉框分别选择月、日、年对应的值；如果是输入框则输入 ${userData.birthDate}；如果要填年龄则填 ${userData.age}。
-3. 如果你看到 Cloudflare 的 "Verify you are human" 验证页面，请点击复选框通过验证。
-4. 创建账户完成后立刻导航到 \`data:text/html,<html><head><title>MISSION_ACCOMPLISHED</title></head><body style=\"background:black;color:lime;display:flex;justify-content:center;align-items:center;height:100vh;font-family:monospace;\"><h1>> TASK COMPLETED SUCCESSFULLY _</h1></body></html>\`，等待15秒并结束。
-5. 页面加载和一般操作等待不超过 5 秒。`;
+AFTER VERIFICATION:
+1. If prompted for personal details, use ${userData.fullName} as the Full Name.
+2. The birthday is ${userData.birthYear}-${userData.birthMonth}-${userData.birthDay} (Age: ${userData.age}). Select the appropriate dropdowns or input fields. If asked for age directly, enter ${userData.age}.
+3. If you see a Cloudflare "Verify you are human" checkbox, click it.
+4. IMMEDIATELY after your account is fully created, navigate directly to exactly: \`data:text/html,<html><head><title>MISSION_ACCOMPLISHED</title></head><body style=\"background:black;color:lime;display:flex;justify-content:center;align-items:center;height:100vh;font-family:monospace;\"><h1>> TASK COMPLETED SUCCESSFULLY _</h1></body></html>\`. Wait on this screen for 15 seconds.
+5. Keep page load and interactions under 5 seconds.`;
     
     console.log('[阶段1c] 发送验证码填入任务...');
     
@@ -203,14 +203,14 @@ async function phase2(emailProvider, browserbase, wsUrl, oauthService, userData)
     console.log(`[阶段2] OAuth URL: ${authUrl.substring(0, 100)}...`);
     
     // 构建 Agent Goal - 由于复用会话，浏览器已登录，Prompt 大幅简化
-    const goal = `导航到以下 OAuth 授权链接: ${authUrl}
+    const goal = `Navigate strictly to the following OAuth authorization link: ${authUrl}
 
-重要规则：
-1. 如果你看到 Cloudflare 的 "Verify you are human" 验证页面，请点击复选框通过验证。
-2. 你应该已经处于登录状态。如果页面直接显示授权确认页面（如 "Allow access" 或类似按钮），直接点击同意授权。
-3. 如果意外需要登录，使用 ${emailProvider.getEmail()} 作为邮箱，${userData.password} 作为密码。如果需要邮箱验证码，打开【新标签页】访问 ${config.mailInboxUrl} 获取，每隔 5 秒刷新，最多等待 90 秒。
-4. 地址跳转到 localhost 回调链接后，会出现无法访问的页面，这是正常的，记录当前完整 URL 并结束即可。
-5. 页面加载和一般操作等待不超过 5 秒。`;
+CRITICAL RULES:
+1. If you see a Cloudflare "Verify you are human" checkbox, click it.
+2. You should already be logged in. If you see the authorization confirmation page (e.g. an "Allow access" or "Authorize" button), click to authorize.
+3. If unexpectedly asked to log in, use ${emailProvider.getEmail()} as email and ${userData.password} as password. If an email verification code is required, open a NEW TAB to visit ${config.mailInboxUrl} and refresh every 5 seconds until you find the code, then enter it.
+4. After authorization finishes, the page will redirect to a localhost URL. It is NORMAL if this localhost callback page says "Unable to connect" or "Site can't be reached". Just wait 5 seconds and terminate the browser session. Do NOT attempt to fix the localhost error.
+5. Keep page load and interaction delays under 5 seconds.`;
     
     console.log('[阶段2] Agent Goal 已准备');
     
