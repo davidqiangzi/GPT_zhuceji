@@ -1002,6 +1002,68 @@ async function phase2(page, emailProvider, oauthService, password, mailService, 
     return await oauthService.exchangeTokenAndSave(params.code, email);
 }
 
+// Bypasses Phase 2 OAuth Flow: directly extracts accessToken from chatgpt.com session API
+async function extractSessionTokenAndSave(page, email, password) {
+    console.log('\n========= Phase 2 (Skip OAuth): Fetching Web Session =========');
+    await page.goto('https://chatgpt.com/api/auth/session', { waitUntil: 'networkidle', timeout: 30000 });
+    
+    const content = await page.evaluate(() => document.body.innerText);
+    try {
+        const session = JSON.parse(content);
+        if (!session.accessToken) {
+            console.log('[Phase2] Could not find accessToken in session:', content.substring(0, 200));
+            throw new Error('No accessToken found in session JSON');
+        }
+        console.log('[Phase2] ✅ Successfully got accessToken from session API');
+        
+        let accountId = "";
+        try {
+            const payloadStr = Buffer.from(session.accessToken.split('.')[1], 'base64').toString('utf8');
+            const payload = JSON.parse(payloadStr);
+            const apiAuth = payload['https://api.openai.com/auth'] || {};
+            accountId = apiAuth.chatgpt_account_id || "";
+        } catch (e) {
+            console.error('[Phase2] 解析 access_token 获取 account_id 失败:', e.message);
+        }
+        
+        const now = new Date();
+        const expiredTime = session.expires ? new Date(session.expires) : new Date(now.getTime() + 10 * 24 * 60 * 60 * 1000);
+        
+        const outData = {
+            access_token: session.accessToken,
+            account_id: accountId,
+            disabled: false,
+            email: email,
+            password: password, // ✅ Added password field
+            expired: expiredTime.toISOString().replace(/\.[0-9]{3}Z$/, '+08:00'),
+            id_token: session.idToken || "",
+            last_refresh: now.toISOString().replace(/\.[0-9]{3}Z$/, '+08:00'),
+            refresh_token: session.refreshToken || "",
+            type: 'codex'
+        };
+        
+        const outputDir = path.join(process.cwd(), 'tokens');
+        if (!fs.existsSync(outputDir)) {
+            fs.mkdirSync(outputDir, { recursive: true });
+        }
+        
+        const filename = `token_${Date.now()}.json`;
+        const filepath = path.join(outputDir, filename);
+        fs.writeFileSync(filepath, JSON.stringify(outData, null, 2));
+        
+        // 保存一个单独的账密映射表方便查看
+        const accountsFile = path.join(process.cwd(), 'accounts.txt');
+        const accountRecord = `Email: ${email} | Password: ${password} | AccountID: ${accountId} | Time: ${new Date().toLocaleString()}\n`;
+        fs.appendFileSync(accountsFile, accountRecord);
+        
+        console.log(`[Phase2] Token 成功保存至: ${filepath}`);
+        return outData;
+    } catch(e) {
+        console.log('[Phase2] Failed to parse session JSON:', e.message);
+        throw e;
+    }
+}
+
 async function runSingleRegistration() {
     console.log('\n========= New Registration =========');
     const emailProvider = new TempMailProvider(config.mailApiBaseUrl, 'spd100.shop');
@@ -1034,7 +1096,8 @@ async function runSingleRegistration() {
         }
 
         await phase1(page, emailProvider, userData, mailService);
-        const tokenData = await phase2(page, emailProvider, oauthService, userData.password, mailService, userData);
+        // Bypassing normal OAuth phase2 entirely!
+        const tokenData = await extractSessionTokenAndSave(page, emailProvider.getEmail(), userData.password);
         console.log('[Main] SUCCESS! Email:', tokenData.email);
         return true;
     } catch (error) {
