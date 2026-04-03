@@ -19,7 +19,10 @@ class DDGEmailProvider {
                 {
                     headers: {
                         'Authorization': `Bearer ${this.token}`,
-                        'Content-Type': 'application/json'
+                        'Content-Type': 'application/json',
+                        'User-Agent': `Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${Math.floor(120 + Math.random()*10)}.0.0.0 Safari/537.36`,
+                        'Origin': 'https://duckduckgo.com',
+                        'Referer': 'https://duckduckgo.com/'
                     }
                 }
             );

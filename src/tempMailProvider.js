@@ -19,16 +19,18 @@ class TempMailProvider {
     }
 
     /**
-     * 生成随机地址名
-     * 格式: codex + 随机6位字母数字, 最终地址为 tmp{name}@{domain}（前缀 tmp 由服务端自动加）
+     * 生成真人化随机地址名
+     * 格式: fname.lname.92, 最终地址为 tmp{name}@{domain}
      */
     _generateAddressName() {
-        const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
-        let name = 'codex';
-        for (let i = 0; i < 6; i++) {
-            name += chars.charAt(crypto.randomInt(chars.length));
-        }
-        return name;
+        const firstNames = ['james', 'john', 'robert', 'michael', 'william', 'david', 'richard', 'joseph', 'thomas', 'charles', 'christopher', 'daniel', 'matthew', 'anthony', 'mark', 'donald', 'steven', 'paul', 'andrew', 'joshua'];
+        const lastNames = ['smith', 'johnson', 'williams', 'brown', 'jones', 'garcia', 'miller', 'davis', 'rodriguez', 'martinez', 'hernandez', 'lopez', 'gonzalez', 'wilson', 'anderson', 'thomas', 'taylor', 'moore', 'jackson', 'martin'];
+        
+        const fname = firstNames[crypto.randomInt(firstNames.length)];
+        const lname = lastNames[crypto.randomInt(lastNames.length)];
+        const suffix = crypto.randomInt(10, 999);
+        
+        return `${fname}.${lname}.${suffix}`;
     }
 
     /**

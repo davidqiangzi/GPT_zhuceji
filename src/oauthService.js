@@ -42,14 +42,14 @@ class OAuthService {
      * 获取 OAuth 授权 URL
      * @returns {string} 授权 URL
      */
-    getAuthUrl() {
+    getAuthUrl(prompt = 'none') {
         const params = new URLSearchParams({
             client_id: this.clientId,
             code_challenge: this.codeChallenge,
             code_challenge_method: 'S256',
             codex_cli_simplified_flow: 'true',
             id_token_add_organizations: 'true',
-            prompt: 'login',
+            prompt: prompt,
             redirect_uri: this.redirectUri,
             response_type: 'code',
             scope: 'openid email profile offline_access',

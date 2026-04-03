@@ -114,14 +114,23 @@ class MailService {
                 
                 if (data.results && data.results.length > 0) {
                     for (const mail of data.results) {
+                        // Debug: log each email
+                        if (attempt <= 2) {
+                            console.log(`[MailService] 检查邮件: id=${mail.id}, from="${mail.source || 'unknown'}", subject="${(mail.subject || '').substring(0, 60)}", created=${mail.created_at}`);
+                        }
+                        
                         // 如果有时间过滤，跳过旧邮件
                         if (afterTimestamp && mail.created_at) {
                             const mailTime = new Date(mail.created_at).getTime();
-                            if (mailTime < afterTimestamp) continue;
+                            if (mailTime < afterTimestamp) {
+                                if (attempt <= 2) console.log(`[MailService]   -> 跳过(旧邮件)`);
+                                continue;
+                            }
                         }
                         
                         // 如果有发件人过滤
                         if (fromFilter && mail.source && !mail.source.toLowerCase().includes(fromFilter.toLowerCase())) {
+                            if (attempt <= 2) console.log(`[MailService]   -> 跳过(发件人不匹配: ${fromFilter})`);
                             continue;
                         }
                         

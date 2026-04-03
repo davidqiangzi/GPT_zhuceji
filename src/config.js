@@ -25,6 +25,7 @@ module.exports = {
     // Browserbase API Key
     browserbaseApiKey: "bb_live_p1q68QpcHmHRIWExRhq9KE1va38",
     browserbaseProjectId: "996719d8-36d9-4180-9cef-80ffbd2c775e",
+    useLocalBrowser: true, // 设置为 true 则使用本地 Playwright 运行，否则使用 Browserbase
 
     // DDG Email Alias
     ddgToken: "gedahwprf3lzeyvbbvxjcddrfpb42bw9vozs7ztdcnwtqxhni3yoh3cy43iwp9",
