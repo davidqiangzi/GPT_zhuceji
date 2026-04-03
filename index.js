@@ -52,9 +52,12 @@ async function detectVerificationCodePage(page) {
     try {
         const t = await page.locator('body').innerText({ timeout: 2000 }).catch(() => '');
         if (t.includes('Check your inbox') || t.includes('Enter the code') ||
-            t.includes('\u68c0\u67e5\u60a8\u7684\u6536\u4ef6\u7bb1') || t.includes('\u9a8c\u8bc1\u7801')) return true;
-        if (await page.locator('input[inputmode="numeric"]').count() > 0) return true;
-        if (await page.locator('input[name="code"], input[autocomplete="one-time-code"]').count() > 0) return true;
+            t.includes('检查您的收件箱') || t.includes('您的收件箱') || t.includes('输入验证码')) return true;
+        
+        // Wait, '验证码' could be false positive in footer or other elements.
+        // Let's rely on strictly visible code input fields.
+        if (await page.locator('input[inputmode="numeric"]').locator('visible=true').count() > 0) return true;
+        if (await page.locator('input[name="code"], input[autocomplete="one-time-code"]').locator('visible=true').count() > 0) return true;
         if (page.url().includes('email-verification')) return true;
     } catch (e) {}
     return false;
@@ -728,7 +731,11 @@ async function phase1(page, emailProvider, userData, mailService) {
             }
             await solveTurnstile(page);
             if (page.url() !== cu || await detectVerificationCodePage(page)) { console.log('[Phase1] Password OK'); break; }
-            if (j === 2) { await page.reload({ waitUntil: 'load' }).catch(() => {}); await page.waitForTimeout(5000); }
+            if (j === 2) { 
+                console.log('[Phase1] Password transition failed, throwing error');
+                await page.screenshot({ path: 'error_pwd_stuck_' + Date.now() + '.png' });
+                throw new Error('Stuck on password page'); 
+            }
         }
     }
 
@@ -1043,27 +1050,32 @@ async function extractSessionTokenAndSave(page, email, password) {
         
         const outDataWithPassword = { ...outData, password };
         
-        const outputDir = path.join(process.cwd(), 'tokens');
-        if (!fs.existsSync(outputDir)) {
-            fs.mkdirSync(outputDir, { recursive: true });
-        }
+        const cleanDir = path.join(process.cwd(), 'tokens', 'clean');
+        const adminDir = path.join(process.cwd(), 'tokens', 'admin');
+        const logsDir = path.join(process.cwd(), 'tokens', 'logs');
+        
+        if (!fs.existsSync(cleanDir)) fs.mkdirSync(cleanDir, { recursive: true });
+        if (!fs.existsSync(adminDir)) fs.mkdirSync(adminDir, { recursive: true });
+        if (!fs.existsSync(logsDir)) fs.mkdirSync(logsDir, { recursive: true });
         
         const timestamp = Date.now();
+        
         // 1. 保留给第三方导入工具的纯净版
-        const cleanFilepath = path.join(outputDir, `token_${timestamp}.json`);
+        const cleanFilepath = path.join(cleanDir, `token_${timestamp}.json`);
         fs.writeFileSync(cleanFilepath, JSON.stringify(outData, null, 2));
         
         // 2. 带密码的 JSON，供自己内部读取的增强版
-        const adminFilepath = path.join(outputDir, `admin_${timestamp}.json`);
+        const adminFilepath = path.join(adminDir, `admin_${timestamp}.json`);
         fs.writeFileSync(adminFilepath, JSON.stringify(outDataWithPassword, null, 2));
         
         // 3. 追加 txt 文档的记录
-        const accountsFile = path.join(process.cwd(), 'accounts.txt');
+        const accountsFile = path.join(logsDir, 'accounts.txt');
         const accountRecord = `Email: ${email} | Password: ${password} | AccountID: ${accountId} | Time: ${new Date().toLocaleString()}\n`;
         fs.appendFileSync(accountsFile, accountRecord);
         
         console.log(`[Phase2] ✅ 纯净 Token 保存至: ${cleanFilepath}`);
         console.log(`[Phase2] ✅ 附带账密 Token 保存至: ${adminFilepath}`);
+        console.log(`[Phase2] ✅ 账密记录追加入: ${accountsFile}`);
         return outDataWithPassword;
     } catch(e) {
         console.log('[Phase2] Failed to parse session JSON:', e.message);
@@ -1116,15 +1128,15 @@ async function runSingleRegistration() {
 }
 
 async function checkTokenCount() {
-    const d = path.join(process.cwd(), 'tokens');
+    const d = path.join(process.cwd(), 'tokens', 'clean');
     if (!fs.existsSync(d)) return 0;
     return fs.readdirSync(d).filter(f => f.startsWith('token_') && f.endsWith('.json')).length;
 }
 
 function archiveExistingTokens() {
-    const d = path.join(process.cwd(), 'tokens');
+    const d = path.join(process.cwd(), 'tokens', 'clean');
     if (!fs.existsSync(d)) return;
-    for (const f of fs.readdirSync(d).filter(f => f.startsWith('token_') && f.endsWith('.json')))
+    for (const f of fs.readdirSync(d).filter(f => !f.startsWith('old_') && f.endsWith('.json')))
         fs.renameSync(path.join(d, f), path.join(d, 'old_' + f));
 }
 
@@ -1136,9 +1148,13 @@ async function startBatch() {
         const c = await checkTokenCount();
         if (c >= TARGET_COUNT) { console.log('[Done]', c); break; }
         console.log('[Progress]', c, '/', TARGET_COUNT);
-        try { await runSingleRegistration(); } catch (error) {
-            const cd = 20000 + Math.random() * 20000;
-            console.error('[Main] Cooldown', Math.round(cd / 1000), 's');
+        try { 
+            await runSingleRegistration(); 
+        } catch (error) {
+            console.error('[Main] 注册抛出异常结束。');
+        } finally {
+            const cd = 120000; // 稳定休眠 120 秒
+            console.log(`[Main] 任务结束，休眠 ${cd / 1000} 秒...等待下一轮`);
             await new Promise(r => setTimeout(r, cd));
         }
     }
