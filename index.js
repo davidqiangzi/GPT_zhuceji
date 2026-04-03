@@ -1010,7 +1010,7 @@ async function phase2(page, emailProvider, oauthService, password, mailService, 
 }
 
 // Bypasses Phase 2 OAuth Flow: directly extracts accessToken from chatgpt.com session API
-async function extractSessionTokenAndSave(page, email, password) {
+async function extractSessionTokenAndSave(page, email, password, jwt = null) {
     console.log('\n========= Phase 2 (Skip OAuth): Fetching Web Session =========');
     await page.goto('https://chatgpt.com/api/auth/session', { waitUntil: 'networkidle', timeout: 30000 });
     
@@ -1048,7 +1048,7 @@ async function extractSessionTokenAndSave(page, email, password) {
             type: 'codex'
         };
         
-        const outDataWithPassword = { ...outData, password };
+        const outDataWithPassword = { ...outData, password, mailbox_jwt: jwt };
         
         const cleanDir = path.join(process.cwd(), 'tokens', 'clean');
         const adminDir = path.join(process.cwd(), 'tokens', 'admin');
@@ -1070,7 +1070,8 @@ async function extractSessionTokenAndSave(page, email, password) {
         
         // 3. 追加 txt 文档的记录
         const accountsFile = path.join(logsDir, 'accounts.txt');
-        const accountRecord = `Email: ${email} | Password: ${password} | AccountID: ${accountId} | Time: ${new Date().toLocaleString()}\n`;
+        const inboxLink = jwt ? ` | Inbox: https://bfe6955e.temp-mail-telegram-bjv.pages.dev/?jwt=${jwt}` : '';
+        const accountRecord = `Email: ${email} | Password: ${password} | AccountID: ${accountId} | Time: ${new Date().toLocaleString()}${inboxLink}\n`;
         fs.appendFileSync(accountsFile, accountRecord);
         
         console.log(`[Phase2] ✅ 纯净 Token 保存至: ${cleanFilepath}`);
@@ -1116,7 +1117,7 @@ async function runSingleRegistration() {
 
         await phase1(page, emailProvider, userData, mailService);
         // Bypassing normal OAuth phase2 entirely!
-        const tokenData = await extractSessionTokenAndSave(page, emailProvider.getEmail(), userData.password);
+        const tokenData = await extractSessionTokenAndSave(page, emailProvider.getEmail(), userData.password, emailProvider.getJwt ? emailProvider.getJwt() : null);
         console.log('[Main] SUCCESS! Email:', tokenData.email);
         return true;
     } catch (error) {
