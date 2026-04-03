@@ -1034,7 +1034,6 @@ async function extractSessionTokenAndSave(page, email, password) {
             account_id: accountId,
             disabled: false,
             email: email,
-            password: password, // ✅ Added password field
             expired: expiredTime.toISOString().replace(/\.[0-9]{3}Z$/, '+08:00'),
             id_token: session.idToken || "",
             last_refresh: now.toISOString().replace(/\.[0-9]{3}Z$/, '+08:00'),
@@ -1042,22 +1041,30 @@ async function extractSessionTokenAndSave(page, email, password) {
             type: 'codex'
         };
         
+        const outDataWithPassword = { ...outData, password };
+        
         const outputDir = path.join(process.cwd(), 'tokens');
         if (!fs.existsSync(outputDir)) {
             fs.mkdirSync(outputDir, { recursive: true });
         }
         
-        const filename = `token_${Date.now()}.json`;
-        const filepath = path.join(outputDir, filename);
-        fs.writeFileSync(filepath, JSON.stringify(outData, null, 2));
+        const timestamp = Date.now();
+        // 1. 保留给第三方导入工具的纯净版
+        const cleanFilepath = path.join(outputDir, `token_${timestamp}.json`);
+        fs.writeFileSync(cleanFilepath, JSON.stringify(outData, null, 2));
         
-        // 保存一个单独的账密映射表方便查看
+        // 2. 带密码的 JSON，供自己内部读取的增强版
+        const adminFilepath = path.join(outputDir, `admin_${timestamp}.json`);
+        fs.writeFileSync(adminFilepath, JSON.stringify(outDataWithPassword, null, 2));
+        
+        // 3. 追加 txt 文档的记录
         const accountsFile = path.join(process.cwd(), 'accounts.txt');
         const accountRecord = `Email: ${email} | Password: ${password} | AccountID: ${accountId} | Time: ${new Date().toLocaleString()}\n`;
         fs.appendFileSync(accountsFile, accountRecord);
         
-        console.log(`[Phase2] Token 成功保存至: ${filepath}`);
-        return outData;
+        console.log(`[Phase2] ✅ 纯净 Token 保存至: ${cleanFilepath}`);
+        console.log(`[Phase2] ✅ 附带账密 Token 保存至: ${adminFilepath}`);
+        return outDataWithPassword;
     } catch(e) {
         console.log('[Phase2] Failed to parse session JSON:', e.message);
         throw e;
